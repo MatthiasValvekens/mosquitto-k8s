@@ -227,7 +227,7 @@ func createUserWithToken(accessToken string) *authenticatedUser {
 	}
 }
 
-func Init(authOpts map[string]string, logLevel log.Level) error {
+func InitBackend(authOpts map[string]string, logLevel log.Level) error {
 	log.SetLevel(logLevel)
 
 	config, err := rest.InClusterConfig()
@@ -342,14 +342,6 @@ func CheckAcl(username, topic, clientid string, acc int32) bool {
 	return res
 }
 
-func GetName() string {
-	return "K8S Plugin " + version
-}
-
 func Halt() {
 	// Do whatever cleanup is needed.
-}
-
-func main() {
-	// pass
 }
