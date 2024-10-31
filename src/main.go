@@ -218,7 +218,7 @@ func createUserWithToken(accessToken string) *authenticatedUser {
 	}
 
 	return &authenticatedUser{
-		username:    accessToken,
+		username:    matchedUsername,
 		createdAt:   time.Now(),
 		updatedAt:   time.Now(),
 		readTopics:  info.Topics.Read,
@@ -307,10 +307,10 @@ func refreshUserCacheIfStale(username string, clientId string) *authenticatedUse
 	}
 
 	if !cacheIsValid(&cache) {
-		info, err := getUserInfo(username)
+		info, err := getUserInfo(cache.username)
 
 		if err != nil {
-			log.Errorf("Failed to receive UserInfo for user %s: %s", username, err)
+			log.Errorf("Failed to receive UserInfo for user %s: %s", cache.username, err)
 			return nil
 		}
 
