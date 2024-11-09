@@ -61,9 +61,7 @@ func AuthUnpwdCheck(username, password, clientid *C.char) uint8 {
 	if GetUser(C.GoString(username), C.GoString(password), C.GoString(clientid)) {
 		return AuthGranted
 	} else {
-
 		return AuthRejected
-
 	}
 }
 
@@ -74,12 +72,6 @@ func AuthAclCheck(clientid, username, topic *C.char, acc C.int) uint8 {
 	} else {
 		return AuthRejected
 	}
-}
-
-//export AuthPluginCleanup
-func AuthPluginCleanup() {
-	log.Info("Cleaning up plugin")
-	Halt()
 }
 
 func main() {}
