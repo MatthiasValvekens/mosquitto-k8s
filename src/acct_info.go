@@ -12,7 +12,7 @@ import (
 var serviceAccountRegex = regexp.MustCompile(`system:serviceaccount:(?P<Namespace>[-_a-zA-Z0-9]+):(?P<AccountName>[-_a-zA-Z0-9]+)`)
 
 type ServiceAccountMetadata struct {
-	Username    string
+	UserName    string
 	TopicAccess struct {
 		ReadPatterns  []string
 		WritePatterns []string
@@ -21,7 +21,7 @@ type ServiceAccountMetadata struct {
 }
 
 func getAccountMetadata(accountName string) (*ServiceAccountMetadata, error) {
-	info := ServiceAccountMetadata{Username: accountName}
+	info := ServiceAccountMetadata{UserName: accountName}
 
 	ctx := context.TODO()
 
@@ -89,7 +89,7 @@ func authenticateServiceAccount(accessToken string) *ServiceAccountMetadata {
 
 	matches := serviceAccountRegex.FindStringSubmatch(result.Status.User.Username)
 	if matches == nil {
-		log.Warnf("Username %s does not seem to refer to a k8s service account. Cannot authorise MQTT access.", result.Status.User.Username)
+		log.Warnf("UserName %s does not seem to refer to a k8s service account. Cannot authorise MQTT access.", result.Status.User.Username)
 		return nil
 	}
 	matchedNamespace := matches[serviceAccountRegex.SubexpIndex("Namespace")]

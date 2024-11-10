@@ -67,20 +67,19 @@ int mosquitto_auth_unpwd_check(void *user_data, struct mosquitto *client, const 
     return MOSQ_ERR_AUTH;
   }
 
-  GoUint8 ret = AuthUnpwdCheck((char *)username, (char *)password, (char *)clientid);
+  char* canonicalUsername = AuthUnpwdCheck((char *)username, (char *)password);
 
-  switch (ret)
-  {
-  case AuthGranted:
-    return MOSQ_ERR_SUCCESS;
-    break;
-  case AuthRejected:
+  if (canonicalUsername == NULL) {
     return MOSQ_ERR_AUTH;
-    break;
-  default:
-    fprintf(stderr, "unknown plugin error: %d\n", ret);
-    return MOSQ_ERR_UNKNOWN;
   }
+
+  if (strcmp(canonicalUsername, username) != 0) {
+    // mosquitto_set_username creates a defensive copy
+    mosquitto_set_username(client, canonicalUsername);
+    free(canonicalUsername);
+  }
+
+  return MOSQ_ERR_SUCCESS;
 }
 
 int mosquitto_auth_acl_check(void *user_data, int access, struct mosquitto *client, const struct mosquitto_acl_msg *msg)

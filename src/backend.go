@@ -18,31 +18,23 @@ type K8sAuthConfig struct {
 	Namespace string
 	Audiences []string
 }
-type Session struct {
-	userName               string
-	readableTopicPatterns  []string
-	writableTopicPatterns  []string
-	sessionStart           time.Time
-	lastUpdate             time.Time
-	lastUsed               time.Time
-	authenticatedWithToken bool
+type CachedUserData struct {
+	userName              string
+	readableTopicPatterns []string
+	writableTopicPatterns []string
+	lastUpdate            time.Time
+	lastUsed              time.Time
 }
 
 var authConfig K8sAuthConfig
 var clientset *kubernetes.Clientset
 
-// Cache on client id (only one session per client ID per MQTT spec)
-// a reconnection always triggers a reauthentication, so even if the client ID
-// remains the same, the authentication state is always refreshed when a client reconnects.
-// Caching on username would not invalidate the cache on a reconnect, which probably
-// creates more problems than it solves. It would also require us to either rethink the way
-// we distinguish between legacy username/password auth vs token-based (currently done using the __token__ username),
-// or reset the client's username to the canonical one in mosquitto after authenticating, which is also a bit messy.
-var clientSessionCache map[string]Session
-var cacheDuration time.Duration
-var sessionTimeout time.Duration
+var userDataCache map[string]CachedUserData
+var cacheValidity time.Duration
+var cacheTimeout time.Duration
 
 func isTopicInList(topicList []string, searchedTopic string, username string, clientid string) bool {
+	log.Debugf("Checking if topic %s is in list %s", searchedTopic, strings.Join(topicList, ","))
 	replacer := strings.NewReplacer("%u", username, "%c", clientid)
 
 	for _, topicFromList := range topicList {
@@ -53,45 +45,55 @@ func isTopicInList(topicList []string, searchedTopic string, username string, cl
 	return false
 }
 
-func checkAccessToTopic(topic string, acc int32, cache *Session, username string, clientid string) bool {
+func checkAccessToTopic(topic string, acc int32, cached *CachedUserData, clientid string) bool {
 	log.Debugf("Check for acl level %d", acc)
 
 	// check read access
 	if acc == 1 || acc == 4 {
-		res := isTopicInList(cache.readableTopicPatterns, topic, username, clientid)
+		res := isTopicInList(cached.readableTopicPatterns, topic, cached.userName, clientid)
 		log.Debugf("ACL for read was %t", res)
 		return res
 	}
 
 	// check write
 	if acc == 2 {
-		res := isTopicInList(cache.writableTopicPatterns, topic, username, clientid)
+		res := isTopicInList(cached.writableTopicPatterns, topic, cached.userName, clientid)
 		log.Debugf("ACL for write was %t", res)
 		return res
 	}
 
 	// check for readwrite
 	if acc == 3 {
-		res := isTopicInList(cache.readableTopicPatterns, topic, username, clientid) && isTopicInList(cache.writableTopicPatterns, topic, username, clientid)
+		res := isTopicInList(cached.readableTopicPatterns, topic, cached.userName, clientid) && isTopicInList(cached.writableTopicPatterns, topic, cached.userName, clientid)
 		log.Debugf("ACL for readwrite was %t", res)
 		return res
 	}
 	return false
 }
 
-func cacheIsValid(now time.Time, cache *Session) bool {
-	return now.Sub(cache.lastUpdate) < cacheDuration
+func cacheIsValid(now time.Time, cache *CachedUserData) bool {
+	return now.Sub(cache.lastUpdate) < cacheValidity
 }
 
-func sessionIsAlive(now time.Time, cache *Session) bool {
-	return now.Sub(cache.lastUsed) < sessionTimeout
+func cacheIsUnused(now time.Time, cache *CachedUserData) bool {
+	return now.Sub(cache.lastUsed) < cacheTimeout
 }
 
-func startSessionWithUsernamePassword(username string, password string) *Session {
+func initCacheEntry(info ServiceAccountMetadata, now time.Time) *CachedUserData {
+	return &CachedUserData{
+		userName:              info.UserName,
+		lastUpdate:            now,
+		lastUsed:              now,
+		readableTopicPatterns: info.TopicAccess.ReadPatterns,
+		writableTopicPatterns: info.TopicAccess.WritePatterns,
+	}
+}
+
+func startSessionWithUsernamePassword(username string, password string) *CachedUserData {
 	// legacy IoT clients with a password that is passed around in the clear
 
 	userInfo, err := getAccountMetadata(username)
-	if err != nil {
+	if err != nil || userInfo == nil {
 		return nil
 	}
 
@@ -104,19 +106,10 @@ func startSessionWithUsernamePassword(username string, password string) *Session
 		return nil
 	}
 
-	now := time.Now()
-	return &Session{
-		userName:               username,
-		sessionStart:           now,
-		lastUpdate:             now,
-		lastUsed:               now,
-		readableTopicPatterns:  userInfo.TopicAccess.ReadPatterns,
-		writableTopicPatterns:  userInfo.TopicAccess.WritePatterns,
-		authenticatedWithToken: false,
-	}
+	return initCacheEntry(*userInfo, time.Now())
 }
 
-func startSessionWithToken(accessToken string) *Session {
+func startSessionWithToken(accessToken string) *CachedUserData {
 
 	info := authenticateServiceAccount(accessToken)
 
@@ -124,16 +117,7 @@ func startSessionWithToken(accessToken string) *Session {
 		return nil
 	}
 
-	now := time.Now()
-	return &Session{
-		userName:               info.Username,
-		sessionStart:           now,
-		lastUpdate:             now,
-		lastUsed:               now,
-		readableTopicPatterns:  info.TopicAccess.ReadPatterns,
-		writableTopicPatterns:  info.TopicAccess.WritePatterns,
-		authenticatedWithToken: true,
-	}
+	return initCacheEntry(*info, time.Now())
 }
 
 func InitBackend(authOpts map[string]string, logLevel log.Level) error {
@@ -173,23 +157,21 @@ func InitBackend(authOpts map[string]string, logLevel log.Level) error {
 			log.Panic("Got no valid cache duration for k8s plugin.")
 		}
 
-		cacheDuration = time.Duration(durationInt) * time.Second
+		cacheValidity = time.Duration(durationInt) * time.Second
 	} else {
-		cacheDuration = 5 * time.Minute
+		log.Panic("No k8s_cache_duration specified")
 	}
 
-	sessionTimeoutSeconds, ok := authOpts["k8s_session_timeout"]
+	sessionTimeoutSeconds, ok := authOpts["k8s_pruning_interval"]
 	if ok {
 		durationInt, err := strconv.Atoi(sessionTimeoutSeconds)
 		if err != nil {
 			log.Panic("Got no valid session timeout for k8s plugin.")
 		}
 
-		sessionTimeout = time.Duration(durationInt) * time.Second
+		cacheTimeout = time.Duration(durationInt) * time.Second
 	} else {
-		// this setting is mostly a memory management thing, it doesn't make sense
-		// if it's not significantly longer than the cache duration time.
-		sessionTimeout = max(2*cacheDuration, 10*time.Minute)
+		log.Panic("No k8s_pruning_interval specified")
 	}
 
 	authConfig = K8sAuthConfig{
@@ -197,15 +179,17 @@ func InitBackend(authOpts map[string]string, logLevel log.Level) error {
 		Audiences: audienceSplit,
 	}
 
-	clientSessionCache = make(map[string]Session)
+	userDataCache = make(map[string]CachedUserData)
 
 	return nil
 }
 
-func GetUser(username string, password string, clientid string) bool {
+func GetUser(username string, password string) *string {
 	// Get token for the credentials and verify the user
 	log.Infof("Checking user with k8s plugin.")
-	var user *Session
+	var user *CachedUserData
+
+	// we always refresh the cache on a new connection
 	if username == "__token__" {
 		user = startSessionWithToken(password)
 	} else {
@@ -213,51 +197,53 @@ func GetUser(username string, password string, clientid string) bool {
 	}
 
 	if user != nil {
-		clientSessionCache[clientid] = *user
-		return true
+		userDataCache[user.userName] = *user
+		return &user.userName
 	}
-	return false
+	return nil
 }
 
-func cleanOldCacheEntries() {
-	var toDelete []string
-	now := time.Now()
-	for clientId, session := range clientSessionCache {
-		if !sessionIsAlive(now, &session) {
-			toDelete = append(toDelete, clientId)
+func cleanOldCacheEntries(now time.Time) {
+	var deletionCandidates []string
+	for user, userData := range userDataCache {
+		if !cacheIsUnused(now, &userData) {
+			deletionCandidates = append(deletionCandidates, user)
 		}
 	}
-	for _, clientId := range toDelete {
-		delete(clientSessionCache, clientId)
+	for _, user := range deletionCandidates {
+		log.Infof("Pruning cache for user %s", user)
+		delete(userDataCache, user)
 	}
 }
 
-func refreshUserCacheIfStale(username string, clientId string) *Session {
-	cleanOldCacheEntries()
-
-	cache, ok := clientSessionCache[clientId]
+func refreshUserCacheIfStale(username string) *CachedUserData {
+	now := time.Now()
+	cache, ok := userDataCache[username]
 	if !ok {
-		log.Warnf("Have no entry in user cache for user %s", username)
-		return nil
+		log.Infof("Have no entry in user cache for user %s, recreating...", username)
+		userDataCache[username] = CachedUserData{}
 	}
 
-	now := time.Now()
-	if !cacheIsValid(now, &cache) {
+	if !ok || !cacheIsValid(now, &cache) {
 		info, err := getAccountMetadata(cache.userName)
 
 		if err != nil {
 			log.Errorf("Failed to receive ServiceAccountMetadata for user %s: %s", cache.userName, err)
+			delete(userDataCache, username)
 			return nil
 		}
 
 		cache.readableTopicPatterns = info.TopicAccess.ReadPatterns
 		cache.writableTopicPatterns = info.TopicAccess.WritePatterns
 		cache.lastUpdate = now
-		log.Debug("Refreshed access info in cache")
+		log.Debugf("Refreshed access info in cache for user %s", username)
 	} else {
-		log.Debug("Get access from cache")
+		log.Debugf("Get access from cache for user %s", username)
 	}
 	cache.lastUsed = now
+
+	// clean up other old cache entries
+	cleanOldCacheEntries(now)
 	return &cache
 }
 
@@ -265,12 +251,12 @@ func CheckAcl(username, topic, clientid string, acc int32) bool {
 	// Function that checks if the user has the right to access a topic
 	log.Debugf("Checking if user %s is allowed to access topic %s with access %d.", username, topic, acc)
 
-	cache := refreshUserCacheIfStale(username, clientid)
+	cache := refreshUserCacheIfStale(username)
 	if cache == nil {
 		return false
 	}
 
-	res := checkAccessToTopic(topic, acc, cache, username, clientid)
+	res := checkAccessToTopic(topic, acc, cache, clientid)
 	log.Debugf("ACL check was %t", res)
 	return res
 }

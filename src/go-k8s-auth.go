@@ -57,11 +57,12 @@ func AuthPluginInit(keys []*C.char, values []*C.char, authOptsNum int, version *
 }
 
 //export AuthUnpwdCheck
-func AuthUnpwdCheck(username, password, clientid *C.char) uint8 {
-	if GetUser(C.GoString(username), C.GoString(password), C.GoString(clientid)) {
-		return AuthGranted
+func AuthUnpwdCheck(username *C.char, password *C.char) *C.char {
+	canonicalUsername := GetUser(C.GoString(username), C.GoString(password))
+	if canonicalUsername != nil {
+		return C.CString(*canonicalUsername)
 	} else {
-		return AuthRejected
+		return nil
 	}
 }
 
