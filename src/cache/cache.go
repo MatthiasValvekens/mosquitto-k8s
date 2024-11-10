@@ -61,11 +61,11 @@ func (cache *UserDataCache) RefreshIfStale(username string, client acct_info.K8s
 	cacheEntry, ok := cache.entries[username]
 	if !ok {
 		log.Infof("Have no entry in user cacheEntry for user %s, recreating...", username)
-		cache.entries[username] = CachedUserData{}
+		cacheEntry = CachedUserData{}
 	}
 
 	if !ok || !cache.EntryIsValid(now, &cacheEntry) {
-		info, err := client.GetAccountInfo(username)
+		meta, err := client.GetAccountMetadata(username)
 
 		if err != nil {
 			log.Errorf("Failed to receive ServiceAccountMetadata for user %s: %s", username, err)
@@ -73,13 +73,14 @@ func (cache *UserDataCache) RefreshIfStale(username string, client acct_info.K8s
 			return nil
 		}
 
-		cacheEntry.Info.TopicAccess = info.Meta.TopicAccess
+		cacheEntry.Info = *meta
 		cacheEntry.lastUpdate = now
 		log.Debugf("Refreshed access info in cacheEntry for user %s", username)
 	} else {
 		log.Debugf("Get access from cacheEntry for user %s", username)
 	}
 	cacheEntry.lastUsed = now
+	cache.entries[username] = cacheEntry
 
 	// clean up other old cacheEntry entries
 	cache.Prune(now)

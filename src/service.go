@@ -75,7 +75,7 @@ func ApplyAuthConfig(authOpts map[string]string) error {
 		panic("No k8s_pruning_interval specified")
 	}
 
-	cache.NewUserDataCache(cacheValidity, cacheTimeout)
+	userDataCache = cache.NewUserDataCache(cacheValidity, cacheTimeout)
 	log.Infof("k8s Plugin " + version + " initialized!")
 
 	return nil

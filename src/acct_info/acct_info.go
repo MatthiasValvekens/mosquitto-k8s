@@ -9,22 +9,22 @@ import (
 	"mosquitto-go-auth-k8s/topics"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var serviceAccountRegex = regexp.MustCompile(`system:serviceaccount:(?P<Namespace>[-_a-zA-Z0-9]+):(?P<AccountName>[-_a-zA-Z0-9]+)`)
 
-type TopicAccess struct {
-	ReadPatterns  []string
-	WritePatterns []string
-}
-
 type ServiceAccountMetadata struct {
 	UserName    string
-	TopicAccess TopicAccess
+	TopicAccess struct {
+		ReadPatterns  []string
+		WritePatterns []string
+	}
+	passwordSecretRef string
 }
 
-type ServiceAccountAuthInfo struct {
-	Meta           ServiceAccountMetadata
+type serviceAccountAuthInfo struct {
+	meta           ServiceAccountMetadata
 	directPassword string
 }
 
@@ -36,22 +36,25 @@ type K8sAuthConfig struct {
 type K8sAccountsClient struct {
 	Config    K8sAuthConfig
 	apiClient kubernetes.Clientset
+	timeout   time.Duration
 }
 
 func NewClient(config K8sAuthConfig, apiClient kubernetes.Clientset) K8sAccountsClient {
 	return K8sAccountsClient{
 		Config:    config,
 		apiClient: apiClient,
+		timeout:   10 * time.Second, // TODO make configurable
 	}
 }
 
-func (client *K8sAccountsClient) GetAccountInfo(accountName string) (*ServiceAccountAuthInfo, error) {
-	info := ServiceAccountAuthInfo{
-		Meta: ServiceAccountMetadata{UserName: accountName},
-	}
+func (client *K8sAccountsClient) GetAccountMetadata(accountName string) (*ServiceAccountMetadata, error) {
+	ctx, cancelFunc := context.WithTimeout(context.TODO(), client.timeout)
+	defer cancelFunc()
+	return client.getAccountMetadata(ctx, accountName)
+}
 
-	ctx := context.TODO()
-
+func (client *K8sAccountsClient) getAccountMetadata(ctx context.Context, accountName string) (*ServiceAccountMetadata, error) {
+	meta := ServiceAccountMetadata{UserName: accountName}
 	account, err := client.apiClient.CoreV1().ServiceAccounts(client.Config.Namespace).Get(ctx, accountName, metav1.GetOptions{})
 
 	if err != nil {
@@ -61,11 +64,43 @@ func (client *K8sAccountsClient) GetAccountInfo(accountName string) (*ServiceAcc
 
 	annots := account.Annotations
 	passwordSecretRef, ok := annots["mqtt.dev.mvalvekens.be/password-secret"]
-
-	info.directPassword = ""
 	if ok {
-		log.Debugf("User %s has password login enabled, reading from secret %s", accountName, passwordSecretRef)
-		secret, err := client.apiClient.CoreV1().Secrets(client.Config.Namespace).Get(ctx, passwordSecretRef, metav1.GetOptions{})
+		meta.passwordSecretRef = passwordSecretRef
+	} else {
+		meta.passwordSecretRef = ""
+	}
+
+	readTopics, ok := annots["mqtt.dev.mvalvekens.be/allow-read"]
+	if ok {
+		log.Debugf("User %s has read access to %s", accountName, readTopics)
+		meta.TopicAccess.ReadPatterns = strings.Split(strings.Replace(readTopics, " ", "", -1), ",")
+	} else {
+		log.Debugf("User %s does not have read access to any topics", accountName)
+		meta.TopicAccess.ReadPatterns = []string{}
+	}
+	writeTopics, ok := annots["mqtt.dev.mvalvekens.be/allow-write"]
+	if ok {
+		log.Debugf("User %s has write access to %s", accountName, writeTopics)
+		meta.TopicAccess.WritePatterns = strings.Split(strings.Replace(writeTopics, " ", "", -1), ",")
+	} else {
+		log.Debugf("User %s does not have write access to any topics", accountName)
+		meta.TopicAccess.WritePatterns = []string{}
+	}
+	return &meta, nil
+}
+
+func (client *K8sAccountsClient) getAccountInfo(ctx context.Context, accountName string) (*serviceAccountAuthInfo, error) {
+	meta, err := client.getAccountMetadata(ctx, accountName)
+
+	if err != nil {
+		return nil, err
+	}
+
+	info := serviceAccountAuthInfo{meta: *meta}
+	info.directPassword = ""
+	if meta.passwordSecretRef != "" {
+		log.Debugf("User %s has password login enabled, reading from secret %s", accountName, meta.passwordSecretRef)
+		secret, err := client.apiClient.CoreV1().Secrets(client.Config.Namespace).Get(ctx, meta.passwordSecretRef, metav1.GetOptions{})
 		if err == nil {
 			passwordBytes, ok := secret.Data["MQTT_PASSWORD"]
 			if ok {
@@ -74,30 +109,16 @@ func (client *K8sAccountsClient) GetAccountInfo(accountName string) (*ServiceAcc
 		}
 	}
 
-	readTopics, ok := annots["mqtt.dev.mvalvekens.be/allow-read"]
-	if ok {
-		log.Debugf("User %s has read access to %s", accountName, readTopics)
-		info.Meta.TopicAccess.ReadPatterns = strings.Split(strings.Replace(readTopics, " ", "", -1), ",")
-	} else {
-		log.Debugf("User %s does not have read access to any topics", accountName)
-		info.Meta.TopicAccess.ReadPatterns = []string{}
-	}
-	writeTopics, ok := annots["mqtt.dev.mvalvekens.be/allow-write"]
-	if ok {
-		log.Debugf("User %s has write access to %s", accountName, writeTopics)
-		info.Meta.TopicAccess.WritePatterns = strings.Split(strings.Replace(writeTopics, " ", "", -1), ",")
-	} else {
-		log.Debugf("User %s does not have write access to any topics", accountName)
-		info.Meta.TopicAccess.WritePatterns = []string{}
-	}
-
 	return &info, nil
 }
 
 func (client *K8sAccountsClient) AuthenticateWithPassword(username string, password string) *ServiceAccountMetadata {
 	// legacy IoT clients with a password that is passed around in the clear
 
-	userInfo, err := client.GetAccountInfo(username)
+	// TODO wire contexts up to the main loop
+	ctx, cancelFunc := context.WithTimeout(context.TODO(), client.timeout)
+	defer cancelFunc()
+	userInfo, err := client.getAccountInfo(ctx, username)
 	if err != nil || userInfo == nil {
 		return nil
 	}
@@ -111,11 +132,13 @@ func (client *K8sAccountsClient) AuthenticateWithPassword(username string, passw
 		return nil
 	}
 
-	return &userInfo.Meta
+	return &userInfo.meta
 }
 
 func (client *K8sAccountsClient) AuthenticateWithToken(accessToken string) *ServiceAccountMetadata {
-	ctx := context.TODO()
+	// TODO wire contexts up to the main loop
+	ctx, cancelFunc := context.WithTimeout(context.TODO(), client.timeout)
+	defer cancelFunc()
 	tokenReview := &v1.TokenReview{
 		Spec: v1.TokenReviewSpec{
 			Token:     accessToken,
@@ -146,12 +169,12 @@ func (client *K8sAccountsClient) AuthenticateWithToken(accessToken string) *Serv
 		log.Warnf("User %s lives in namespace %s, not %s.", result.Status.User.Username, matchedNamespace, client.Config.Namespace)
 		return nil
 	}
-	info, err := client.GetAccountInfo(matchedUsername)
+	info, err := client.getAccountInfo(ctx, matchedUsername)
 
 	if err != nil {
 		log.Warnf("Failed to fetch user data for %s, %s", result.Status.User.Username, err)
 	}
-	return &info.Meta
+	return &info.meta
 }
 
 func isTopicInList(topicList []string, searchedTopic string, username string, clientid string) bool {

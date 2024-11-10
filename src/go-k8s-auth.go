@@ -76,3 +76,5 @@ func AuthAclCheck(clientid, username, topic *C.char, acc C.int) uint8 {
 		return AuthRejected
 	}
 }
+
+func main() {}
