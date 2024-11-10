@@ -81,7 +81,7 @@ RUN set -ex; \
 RUN mkdir -p /var/lib/mosquitto /var/log/mosquitto
 RUN set -ex; \
     groupadd mosquitto; \
-    useradd -s /sbin/nologin mosquitto -g mosquitto -d /var/lib/mosquitto; \
+    useradd -s /sbin/nologin -u 1883 mosquitto -g mosquitto -d /var/lib/mosquitto; \
     chown -R mosquitto:mosquitto /var/log/mosquitto/; \
     chown -R mosquitto:mosquitto /var/lib/mosquitto/
 
@@ -92,9 +92,8 @@ COPY --from=mosquitto_builder /usr/local/sbin/mosquitto /usr/sbin/mosquitto
 
 COPY --from=mosquitto_builder /usr/local/lib/libmosquitto* /usr/local/lib/
 
-COPY --from=mosquitto_builder /usr/local/bin/mosquitto_passwd /usr/bin/mosquitto_passwd
-
 RUN ldconfig;
+USER mosquitto
 
 EXPOSE 1883 1884
 CMD [ "/usr/sbin/mosquitto" ,"-c", "/etc/mosquitto/mosquitto.conf" ]
