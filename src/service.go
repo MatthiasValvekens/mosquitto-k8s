@@ -23,12 +23,13 @@ func ApplyAuthConfig(authOpts map[string]string) error {
 	config, err := rest.InClusterConfig()
 
 	if err != nil {
-		panic("This plugin only works in a k8s pod")
+		log.Panic("This plugin only works in a k8s pod")
 	}
 
 	apiClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		panic("Failed to initialise k8s clientset")
+		log.Panic("Failed to initialise k8s clientset")
+		return err
 	}
 
 	namespace, ok := authOpts["k8s_namespace"]
@@ -36,7 +37,7 @@ func ApplyAuthConfig(authOpts map[string]string) error {
 		namespaceBytes, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 		namespace = string(namespaceBytes)
 		if err != nil {
-			panic("No k8s_namespace specified, failed to read it from the pod")
+			log.Panic("No k8s_namespace specified, failed to read it from the pod")
 		}
 	}
 	audiences, ok := authOpts["k8s_audiences"]
@@ -60,19 +61,19 @@ func ApplyAuthConfig(authOpts map[string]string) error {
 
 		cacheValidity = time.Duration(durationInt) * time.Second
 	} else {
-		panic("No k8s_cache_duration specified")
+		log.Panic("No k8s_cache_duration specified")
 	}
 
 	sessionTimeoutSeconds, ok := authOpts["k8s_pruning_interval"]
 	if ok {
 		durationInt, err := strconv.Atoi(sessionTimeoutSeconds)
 		if err != nil {
-			panic("Got no valid session timeout for k8s plugin.")
+			log.Panic("Got no valid session timeout for k8s plugin.")
 		}
 
 		cacheTimeout = time.Duration(durationInt) * time.Second
 	} else {
-		panic("No k8s_pruning_interval specified")
+		log.Panic("No k8s_pruning_interval specified")
 	}
 
 	userDataCache = cache.NewUserDataCache(cacheValidity, cacheTimeout)

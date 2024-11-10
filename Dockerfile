@@ -1,7 +1,6 @@
 # Define Mosquitto version, see also .github/workflows/build_and_push_docker_images.yml for
 # the automatically built images
-ARG MOSQUITTO_VERSION=2.0.18
-ARG PLUGIN_VERSION=2.1.0
+ARG MOSQUITTO_VERSION=2.0.20
 
 # Use debian:stable-slim as a builder for Mosquitto and dependencies.
 FROM debian:stable-slim AS mosquitto_builder
@@ -27,7 +26,7 @@ RUN set -ex; \
     make CFLAGS="-Wall -O2" WITH_WEBSOCKETS=no WITH_SRV=no WITH_CJSON=no WITH_CLIENTS=no; \
     make install;
 
-# Use golang:latest as a builder for the Mosquitto Go Auth plugin.
+# Use golang:latest as a builder for the plugin
 FROM --platform=$BUILDPLATFORM golang:latest AS go_auth_builder
 
 ENV CGO_CFLAGS="-I/usr/local/include -fPIC"
@@ -37,7 +36,6 @@ ENV CGO_ENABLED=1
 # Bring TARGETPLATFORM to the build scope
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
-ARG PLUGIN_VERSION
 
 # Install TARGETPLATFORM parser to translate its value to GOOS, GOARCH, and GOARM
 COPY --from=tonistiigi/xx:golang / /
