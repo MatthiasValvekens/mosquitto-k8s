@@ -42,7 +42,7 @@ int mosquitto_auth_plugin_init(void **user_data, struct mosquitto_auth_opt *auth
   sprintf(versionArray, "%i.%i.%i", LIBMOSQUITTO_MAJOR, LIBMOSQUITTO_MINOR, LIBMOSQUITTO_REVISION);
 
 
-  AuthPluginInit(keysSlice, valuesSlice, opts_count, versionArray);
+  AuthPluginInit(keysSlice, valuesSlice, opts_count);
   return MOSQ_ERR_SUCCESS;
 }
 

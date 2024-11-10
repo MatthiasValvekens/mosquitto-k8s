@@ -16,7 +16,7 @@ const (
 var authOpts map[string]string //Options passed by mosquitto.
 
 //export AuthPluginInit
-func AuthPluginInit(keys []*C.char, values []*C.char, authOptsNum int, version *C.char) {
+func AuthPluginInit(keys []*C.char, values []*C.char, authOptsNum int) {
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp: true,
 	})
@@ -50,7 +50,9 @@ func AuthPluginInit(keys []*C.char, values []*C.char, authOptsNum int, version *
 
 	var err error
 
-	err = InitBackend(authOpts, logLevel)
+	log.SetLevel(logLevel)
+
+	err = ApplyAuthConfig(authOpts)
 	if err != nil {
 		log.Fatalf("error initializing backends: %s", err)
 	}
@@ -58,7 +60,7 @@ func AuthPluginInit(keys []*C.char, values []*C.char, authOptsNum int, version *
 
 //export AuthUnpwdCheck
 func AuthUnpwdCheck(username *C.char, password *C.char) *C.char {
-	canonicalUsername := GetUser(C.GoString(username), C.GoString(password))
+	canonicalUsername := Login(C.GoString(username), C.GoString(password))
 	if canonicalUsername != nil {
 		return C.CString(*canonicalUsername)
 	} else {
@@ -74,5 +76,3 @@ func AuthAclCheck(clientid, username, topic *C.char, acc C.int) uint8 {
 		return AuthRejected
 	}
 }
-
-func main() {}
