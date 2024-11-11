@@ -35,11 +35,11 @@ type K8sAuthConfig struct {
 
 type K8sAccountsClient struct {
 	Config    K8sAuthConfig
-	apiClient kubernetes.Clientset
+	apiClient kubernetes.Interface
 	timeout   time.Duration
 }
 
-func NewClient(config K8sAuthConfig, apiClient kubernetes.Clientset) K8sAccountsClient {
+func NewClient(config K8sAuthConfig, apiClient kubernetes.Interface) K8sAccountsClient {
 	return K8sAccountsClient{
 		Config:    config,
 		apiClient: apiClient,

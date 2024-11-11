@@ -29,7 +29,6 @@ func ApplyAuthConfig(authOpts map[string]string) error {
 	apiClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		log.Panic("Failed to initialise k8s clientset")
-		return err
 	}
 
 	namespace, ok := authOpts["k8s_namespace"]
@@ -49,7 +48,7 @@ func ApplyAuthConfig(authOpts map[string]string) error {
 		Namespace: namespace,
 		Audiences: audienceSplit,
 	}
-	authClient = acct_info.NewClient(authConfig, *apiClient)
+	authClient = acct_info.NewClient(authConfig, apiClient)
 	cacheDurationSeconds, ok := authOpts["k8s_cache_duration"]
 	var cacheValidity time.Duration
 	var cacheTimeout time.Duration
