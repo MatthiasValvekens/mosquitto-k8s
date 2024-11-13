@@ -14,6 +14,10 @@ const (
 	AuthGranted  = 1
 )
 
+const version = "v0.0.1"
+
+var authService *service.K8sAuthService
+
 //export AuthPluginInit
 func AuthPluginInit(keys []*C.char, values []*C.char, authOptsNum int) {
 	log.SetFormatter(&log.TextFormatter{
@@ -51,15 +55,16 @@ func AuthPluginInit(keys []*C.char, values []*C.char, authOptsNum int) {
 
 	log.SetLevel(logLevel)
 
-	err = service.ApplyAuthConfig(authOpts)
+	authService, err = service.NewService(authOpts)
 	if err != nil {
-		log.Fatalf("error initializing backends: %s", err)
+		log.Fatalf("error initializing plugin: %s", err)
 	}
+	log.Infof("k8s Plugin " + version + " initialized!")
 }
 
 //export AuthUnpwdCheck
 func AuthUnpwdCheck(username *C.char, password *C.char) *C.char {
-	canonicalUsername := service.Login(C.GoString(username), C.GoString(password))
+	canonicalUsername := authService.Login(C.GoString(username), C.GoString(password))
 	if canonicalUsername != nil {
 		return C.CString(*canonicalUsername)
 	} else {
@@ -69,7 +74,7 @@ func AuthUnpwdCheck(username *C.char, password *C.char) *C.char {
 
 //export AuthAclCheck
 func AuthAclCheck(clientid, username, topic *C.char, acc C.int) uint8 {
-	if service.CheckAcl(C.GoString(username), C.GoString(topic), C.GoString(clientid), int32(acc)) {
+	if authService.CheckAcl(C.GoString(username), C.GoString(topic), C.GoString(clientid), int32(acc)) {
 		return AuthGranted
 	} else {
 		return AuthRejected

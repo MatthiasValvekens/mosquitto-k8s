@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"mosquitto-go-auth-k8s/acct_info"
@@ -14,24 +15,23 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var version = "v0.0.1"
+type K8sAuthService struct {
+	authClient    acct_info.K8sAccountsClient
+	userDataCache cache.UserDataCache
+	ctx           context.Context
+}
 
-var authClient acct_info.K8sAccountsClient
-
-var userDataCache cache.UserDataCache
-
-var ctx context.Context
-
-func ApplyAuthConfig(authOpts map[string]string) error {
+func NewService(authOpts map[string]string) (*K8sAuthService, error) {
+	var result = K8sAuthService{}
 	config, err := rest.InClusterConfig()
 
 	if err != nil {
-		log.Panic("This plugin only works in a k8s pod")
+		return nil, errors.New("this plugin only works in a k8s pod")
 	}
 
 	apiClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		log.Panic("Failed to initialise k8s clientset")
+		return nil, errors.Join(errors.New("failed to initialise k8s clientset"), err)
 	}
 
 	namespace, ok := authOpts["k8s_namespace"]
@@ -39,7 +39,8 @@ func ApplyAuthConfig(authOpts map[string]string) error {
 		namespaceBytes, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 		namespace = string(namespaceBytes)
 		if err != nil {
-			log.Panic("No k8s_namespace specified, failed to read it from the pod")
+			return nil, errors.Join(errors.New("no k8s_namespace specified, failed to read it from the pod"), err)
+
 		}
 	}
 	audiences, ok := authOpts["k8s_audiences"]
@@ -51,63 +52,57 @@ func ApplyAuthConfig(authOpts map[string]string) error {
 		Namespace: namespace,
 		Audiences: audienceSplit,
 	}
-	authClient = acct_info.NewClient(authConfig, apiClient)
+	result.authClient = acct_info.NewClient(authConfig, apiClient)
 	cacheDurationSeconds, ok := authOpts["k8s_cache_duration"]
 	var cacheValidity time.Duration
 	var cacheTimeout time.Duration
 	if ok {
 		durationInt, err := strconv.Atoi(cacheDurationSeconds)
 		if err != nil {
-			log.Panic("Got no valid cache duration for k8s plugin.")
+			return nil, errors.Join(errors.New("failed to parse k8s_cache_duration as an integer number of seconds"), err)
 		}
-
 		cacheValidity = time.Duration(durationInt) * time.Second
 	} else {
-		log.Panic("No k8s_cache_duration specified")
+		return nil, errors.Join(errors.New("no k8s_cache_duration specified"), err)
 	}
 
 	sessionTimeoutSeconds, ok := authOpts["k8s_pruning_interval"]
 	if ok {
 		durationInt, err := strconv.Atoi(sessionTimeoutSeconds)
 		if err != nil {
-			log.Panic("Got no valid session timeout for k8s plugin.")
+			return nil, errors.Join(errors.New("failed to parse k8s_pruning_interval as an integer number of seconds"), err)
 		}
-
 		cacheTimeout = time.Duration(durationInt) * time.Second
 	} else {
-		log.Panic("No k8s_pruning_interval specified")
+		return nil, errors.Join(errors.New("no k8s_pruning_interval specified"), err)
 	}
-
-	userDataCache = cache.NewUserDataCache(cacheValidity, cacheTimeout)
-	log.Infof("k8s Plugin " + version + " initialized!")
-
-	ctx = context.Background()
-
-	return nil
+	result.userDataCache = cache.NewUserDataCache(cacheValidity, cacheTimeout)
+	result.ctx = context.Background()
+	return &result, nil
 }
 
-func Login(username string, password string) *string {
+func (s *K8sAuthService) Login(username string, password string) *string {
 	var info *acct_info.ServiceAccountMetadata
 
 	// we always refresh the cache on a new connection
 	if username == "__token__" {
-		info = authClient.AuthenticateWithToken(ctx, password)
+		info = s.authClient.AuthenticateWithToken(s.ctx, password)
 	} else {
-		info = authClient.AuthenticateWithPassword(ctx, username, password)
+		info = s.authClient.AuthenticateWithPassword(s.ctx, username, password)
 	}
 
 	if info != nil {
-		userDataCache.InitEntry(*info, time.Now())
+		s.userDataCache.InitEntry(*info, time.Now())
 		return &info.UserName
 	}
 	return nil
 }
 
-func CheckAcl(username string, topic string, clientid string, acc int32) bool {
+func (s *K8sAuthService) CheckAcl(username string, topic string, clientid string, acc int32) bool {
 	// Function that checks if the user has the right to access a topic
 	log.Debugf("Checking if user %s is allowed to access topic %s with access %d.", username, topic, acc)
 
-	user := userDataCache.RefreshIfStale(ctx, username, authClient)
+	user := s.userDataCache.RefreshIfStale(s.ctx, username, s.authClient)
 	if user == nil {
 		return false
 	}
