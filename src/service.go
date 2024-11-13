@@ -112,7 +112,7 @@ func CheckAcl(username string, topic string, clientid string, acc int32) bool {
 		return false
 	}
 
-	res := user.Info.CheckAccessToTopic(topic, acc, clientid)
+	res := user.Info.TopicAccess.CheckAccessToTopic(topic, acc, user.Info.UserName, clientid)
 	log.Debugf("ACL check was %t", res)
 	return res
 }

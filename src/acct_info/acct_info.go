@@ -19,14 +19,9 @@ const MQTTPasswordKey = "MQTT_PASSWORD"
 
 var serviceAccountRegex = regexp.MustCompile(`system:serviceaccount:(?P<Namespace>[-_a-zA-Z0-9]+):(?P<AccountName>[-_a-zA-Z0-9]+)`)
 
-type TopicAccess struct {
-	ReadPatterns  []string
-	WritePatterns []string
-}
-
 type ServiceAccountMetadata struct {
 	UserName          string
-	TopicAccess       TopicAccess
+	TopicAccess       topics.TopicAccess
 	passwordSecretRef string
 }
 
@@ -174,52 +169,7 @@ func (client *K8sAccountsClient) AuthenticateWithToken(ctx context.Context, acce
 
 	if err != nil {
 		log.Warnf("Failed to fetch user data for %s, %s", result.Status.User.Username, err)
+		return nil
 	}
 	return &info.meta
-}
-
-func isTopicInList(topicList []string, searchedTopic string, username string, clientid string) bool {
-	log.Debugf("Checking if topic %s is in list %s", searchedTopic, strings.Join(topicList, ","))
-	replacer := strings.NewReplacer("%u", username, "%c", clientid)
-
-	for _, topicFromList := range topicList {
-		if topics.Match(replacer.Replace(topicFromList), searchedTopic) {
-			return true
-		}
-	}
-	return false
-}
-
-func (m *ServiceAccountMetadata) CanRead(topic string, clientId string) bool {
-	return isTopicInList(m.TopicAccess.ReadPatterns, topic, m.UserName, clientId)
-}
-
-func (m *ServiceAccountMetadata) CanWrite(topic string, clientId string) bool {
-	return isTopicInList(m.TopicAccess.ReadPatterns, topic, m.UserName, clientId)
-}
-
-func (m *ServiceAccountMetadata) CheckAccessToTopic(topic string, acc int32, clientid string) bool {
-	log.Debugf("Check for acl level %d", acc)
-
-	// check read access
-	if acc == 1 || acc == 4 {
-		res := m.CanRead(topic, clientid)
-		log.Debugf("ACL for read was %t", res)
-		return res
-	}
-
-	// check write
-	if acc == 2 {
-		res := m.CanWrite(topic, clientid)
-		log.Debugf("ACL for write was %t", res)
-		return res
-	}
-
-	// check for readwrite
-	if acc == 3 {
-		res := m.CanRead(topic, clientid) && m.CanWrite(topic, clientid)
-		log.Debugf("ACL for readwrite was %t", res)
-		return res
-	}
-	return false
 }
