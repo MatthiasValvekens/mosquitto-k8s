@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mosquitto.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mosquitto.labels" . | nindent 4 }}
+data:
+  mosquitto.conf: |-
+    persistence false
+
+    log_type all
+    log_dest stdout
+
+    listener 1883
+
+    allow_anonymous false
+
+    auth_plugin /mosquitto/go-k8s-auth.so
+
+    auth_opt_log_level {{ .Values.k8sAuthIntegration.logLevel }}
+    auth_opt_log_dest stdout
+    auth_opt_backends plugin
+
+    auth_opt_k8s_cache_duration {{ .Values.k8sAuthIntegration.cacheDurationSeconds }}
+    auth_opt_k8s_pruning_interval {{ .Values.k8sAuthIntegration.pruningIntervalSeconds }}
+    auth_opt_k8s_audiences {{ .Values.k8sAuthIntegration.audiences }}

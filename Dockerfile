@@ -88,7 +88,7 @@ RUN set -ex; \
 #Copy confs, plugin so and mosquitto binary.
 COPY --from=mosquitto_builder /app/mosquitto/ /mosquitto/
 COPY --from=go_auth_builder /app/plugin/go-k8s-auth.so /mosquitto/go-k8s-auth.so
-COPY --from=mosquitto_builder /usr/local/sbin/mosquitto /usr/sbin/mosquitto
+COPY --from=mosquitto_builder /usr/local/sbin/mosquitto* /usr/sbin/
 
 COPY --from=mosquitto_builder /usr/local/lib/libmosquitto* /usr/local/lib/
 
