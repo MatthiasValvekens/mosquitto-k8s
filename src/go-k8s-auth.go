@@ -13,15 +13,13 @@ const (
 	AuthGranted  = 1
 )
 
-var authOpts map[string]string //Options passed by mosquitto.
-
 //export AuthPluginInit
 func AuthPluginInit(keys []*C.char, values []*C.char, authOptsNum int) {
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp: true,
 	})
 
-	authOpts = make(map[string]string)
+	authOpts := make(map[string]string)
 	for i := 0; i < authOptsNum; i++ {
 		authOpts[C.GoString(keys[i])] = C.GoString(values[i])
 	}

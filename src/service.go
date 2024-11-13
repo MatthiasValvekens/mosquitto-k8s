@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"mosquitto-go-auth-k8s/acct_info"
@@ -18,6 +19,8 @@ var version = "v0.0.1"
 var authClient acct_info.K8sAccountsClient
 
 var userDataCache cache.UserDataCache
+
+var ctx context.Context
 
 func ApplyAuthConfig(authOpts map[string]string) error {
 	config, err := rest.InClusterConfig()
@@ -78,6 +81,8 @@ func ApplyAuthConfig(authOpts map[string]string) error {
 	userDataCache = cache.NewUserDataCache(cacheValidity, cacheTimeout)
 	log.Infof("k8s Plugin " + version + " initialized!")
 
+	ctx = context.Background()
+
 	return nil
 }
 
@@ -86,9 +91,9 @@ func Login(username string, password string) *string {
 
 	// we always refresh the cache on a new connection
 	if username == "__token__" {
-		info = authClient.AuthenticateWithToken(password)
+		info = authClient.AuthenticateWithToken(ctx, password)
 	} else {
-		info = authClient.AuthenticateWithPassword(username, password)
+		info = authClient.AuthenticateWithPassword(ctx, username, password)
 	}
 
 	if info != nil {
@@ -102,7 +107,7 @@ func CheckAcl(username string, topic string, clientid string, acc int32) bool {
 	// Function that checks if the user has the right to access a topic
 	log.Debugf("Checking if user %s is allowed to access topic %s with access %d.", username, topic, acc)
 
-	user := userDataCache.RefreshIfStale(username, authClient)
+	user := userDataCache.RefreshIfStale(ctx, username, authClient)
 	if user == nil {
 		return false
 	}

@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	log "github.com/sirupsen/logrus"
 	"mosquitto-go-auth-k8s/acct_info"
 	"time"
@@ -56,7 +57,7 @@ func (cache *UserDataCache) Prune(now time.Time) {
 	}
 }
 
-func (cache *UserDataCache) RefreshIfStale(username string, client acct_info.K8sAccountsClient) *CachedUserData {
+func (cache *UserDataCache) RefreshIfStale(ctx context.Context, username string, client acct_info.K8sAccountsClient) *CachedUserData {
 	now := time.Now()
 	cacheEntry, ok := cache.entries[username]
 	if !ok {
@@ -65,7 +66,7 @@ func (cache *UserDataCache) RefreshIfStale(username string, client acct_info.K8s
 	}
 
 	if !ok || !cache.EntryIsValid(now, &cacheEntry) {
-		meta, err := client.GetAccountMetadata(username)
+		meta, err := client.GetAccountMetadata(ctx, username)
 
 		if err != nil {
 			log.Errorf("Failed to receive ServiceAccountMetadata for user %s: %s", username, err)
