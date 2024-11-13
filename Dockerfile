@@ -63,9 +63,9 @@ RUN set -ex; \
 WORKDIR /app
 COPY --from=mosquitto_builder /usr/local/include/ /usr/local/include/
 
-COPY src/ ./
+COPY ./ ./
 
-RUN set -ex; \
+RUN set -ex; cd plugin/; \
     go tool cgo -exportheader go-k8s-auth.h go-k8s-auth.go; \
     go build -ldflags="-s -w" -buildmode=c-shared -o go-k8s-auth.so
 
@@ -87,7 +87,7 @@ RUN set -ex; \
 
 #Copy confs, plugin so and mosquitto binary.
 COPY --from=mosquitto_builder /app/mosquitto/ /mosquitto/
-COPY --from=go_auth_builder /app/go-k8s-auth.so /mosquitto/go-k8s-auth.so
+COPY --from=go_auth_builder /app/plugin/go-k8s-auth.so /mosquitto/go-k8s-auth.so
 COPY --from=mosquitto_builder /usr/local/sbin/mosquitto /usr/sbin/mosquitto
 
 COPY --from=mosquitto_builder /usr/local/lib/libmosquitto* /usr/local/lib/

@@ -4,6 +4,7 @@ import "C"
 
 import (
 	log "github.com/sirupsen/logrus"
+	"mosquitto-go-auth-k8s/service"
 	"strings"
 )
 
@@ -42,7 +43,7 @@ func AuthPluginInit(keys []*C.char, values []*C.char, authOptsNum int) {
 		case "panic":
 			logLevel = log.PanicLevel
 		default:
-			log.Info("log_level unkwown, using default info level")
+			log.Info("log_level unknown, using default info level")
 		}
 	}
 
@@ -50,7 +51,7 @@ func AuthPluginInit(keys []*C.char, values []*C.char, authOptsNum int) {
 
 	log.SetLevel(logLevel)
 
-	err = ApplyAuthConfig(authOpts)
+	err = service.ApplyAuthConfig(authOpts)
 	if err != nil {
 		log.Fatalf("error initializing backends: %s", err)
 	}
@@ -58,7 +59,7 @@ func AuthPluginInit(keys []*C.char, values []*C.char, authOptsNum int) {
 
 //export AuthUnpwdCheck
 func AuthUnpwdCheck(username *C.char, password *C.char) *C.char {
-	canonicalUsername := Login(C.GoString(username), C.GoString(password))
+	canonicalUsername := service.Login(C.GoString(username), C.GoString(password))
 	if canonicalUsername != nil {
 		return C.CString(*canonicalUsername)
 	} else {
@@ -68,7 +69,7 @@ func AuthUnpwdCheck(username *C.char, password *C.char) *C.char {
 
 //export AuthAclCheck
 func AuthAclCheck(clientid, username, topic *C.char, acc C.int) uint8 {
-	if CheckAcl(C.GoString(username), C.GoString(topic), C.GoString(clientid), int32(acc)) {
+	if service.CheckAcl(C.GoString(username), C.GoString(topic), C.GoString(clientid), int32(acc)) {
 		return AuthGranted
 	} else {
 		return AuthRejected
