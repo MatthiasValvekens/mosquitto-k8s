@@ -2,7 +2,7 @@ name: Publish mosquitto-k8s container image
 on:
   push:
     tags: [ "v*" ]
-    branches: [ master, "ci/*"]
+    branches: [ master ]
   workflow_dispatch: {}
 
 jobs:
