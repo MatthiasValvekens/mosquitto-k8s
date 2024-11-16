@@ -4,7 +4,7 @@ metadata:
   name: {{ include "mosquitto.fullname" . }}
   {{- if .Values.service.annotations }}
   annotations:
-    {{- toYaml .Values.service.annotations | indent 4 }}
+{{ .Values.service.annotations | toYaml | indent 4 }}
   {{- end }}
   labels:
     {{- include "mosquitto.labels" . | nindent 4 }}
