@@ -1,0 +1,37 @@
+name: Publish mosquitto-k8s Helm chart
+on:
+  push:
+    tags: [ "v*" ]
+    branches: [ "ci/*" ]
+  workflow_dispatch: {}
+jobs:
+  publish-chart:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.7.0
+      - name: Install Helm
+        uses: azure/setup-helm@v4.2.0
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package and push
+        id: package-push
+        run: |
+          cd chart
+          helm package mosquitto-k8s-helm
+          CHART_VERSION=$(grep 'version:' ./mosquitto-k8s-helm/Chart.yaml | tail -n1 | awk '{ print $2 }')
+          FILENAME=mosquitto-k8s-helm-${CHART_VERSION}.tgz
+          DIGEST=$(helm push $FILENAME oci://ghcr.io/matthiasvalvekens 2>&1 | grep 'Digest:' | tail -n1 | awk '{ print $2 }')
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+      - name: Sign images using GHA OIDC identity
+        run: cosign sign --yes ghcr.io/matthiasvalvekens/mosquitto-k8s-helm@${{ steps.package-push.outputs.digest }}
