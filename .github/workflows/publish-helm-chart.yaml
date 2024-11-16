@@ -2,7 +2,6 @@ name: Publish mosquitto-k8s Helm chart
 on:
   push:
     tags: [ "v*" ]
-    branches: [ "ci/*" ]
   workflow_dispatch: {}
 jobs:
   publish-chart:
