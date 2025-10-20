@@ -3,9 +3,10 @@ package main
 import "C"
 
 import (
-	log "github.com/sirupsen/logrus"
 	"mosquitto-go-auth-k8s/service"
 	"strings"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // errors to signal mosquitto
