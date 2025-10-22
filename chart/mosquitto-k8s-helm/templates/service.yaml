@@ -10,6 +10,7 @@ metadata:
     {{- include "mosquitto.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
+  ipFamilies: {{ .Values.service.ipFamilies | toJson }}
   ipFamilyPolicy: {{ .Values.service.ipFamilyPolicy }}
   ports:
     - port: {{ .Values.service.port }}

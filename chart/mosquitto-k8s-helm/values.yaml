@@ -38,6 +38,7 @@ k8sAuthIntegration:
 
 service:
   type: ClusterIP
+  ipFamilies:
   ipFamilyPolicy: SingleStack
   port: 1883
   annotations: {}
