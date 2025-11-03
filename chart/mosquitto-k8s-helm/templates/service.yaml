@@ -12,6 +12,8 @@ spec:
   type: {{ .Values.service.type }}
   ipFamilies: {{ .Values.service.ipFamilies | toJson }}
   ipFamilyPolicy: {{ .Values.service.ipFamilyPolicy }}
+  externalTrafficPolicy: {{ .Values.service.externalTrafficPolicy }}
+  internalTrafficPolicy: {{ .Values.service.internalTrafficPolicy }}
   ports:
     - port: {{ .Values.service.port }}
       targetPort: mqtt

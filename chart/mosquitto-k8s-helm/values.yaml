@@ -42,6 +42,8 @@ service:
   ipFamilyPolicy: SingleStack
   port: 1883
   annotations: {}
+  externalTrafficPolicy: Cluster
+  internalTrafficPolicy: Cluster
 
 resources: {}
 
